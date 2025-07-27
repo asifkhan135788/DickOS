@@ -1,0 +1,2150 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Functional Android Launcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: auto; /* Allow scrolling if content exceeds viewport */
+            padding: 20px; /* Add some padding around the phone */
+            box-sizing: border-box; /* Include padding in element's total width and height */
+        }
+
+        .phone-container {
+            width: 90vw; /* Use 90% of viewport width */
+            max-width: 390px; /* But don't exceed 390px */
+            aspect-ratio: 390 / 844; /* Maintain the original aspect ratio */
+            border-radius: 50px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0,0,0,0.4);
+            border: 12px solid #111;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .screen-content {
+            flex-grow: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .launcher-screen {
+            width: 100%;
+            height: 100%;
+            background-image: url('https://images.unsplash.com/photo-1549880338-65ddcdfd017b?q=80&w=2070&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1), filter 0.5s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+            z-index: 10;
+        }
+        
+        /* Blur and dim effect for app/permission/recents overlays */
+        .launcher-screen.app-is-open, 
+        .launcher-screen.permission-is-open, 
+        .launcher-screen.recents-is-open {
+            transform: scale(0.92);
+            filter: blur(20px) brightness(0.7);
+            border-radius: 30px;
+            overflow: hidden;
+        }
+        
+        /* No specific blur for launcher-screen when notification/control panel is open,
+           as panels use backdrop-filter for blur effect behind them. */
+
+        .status-bar {
+            position: absolute;
+            width: 100%;
+            top: 0;
+            left: 0;
+            padding: 18px 28px 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+            font-weight: 500;
+            z-index: 20; /* Ensure status bar is above launcher content */
+        }
+        /* Punch-hole notch style */
+        .notch {
+            position: absolute;
+            top: 18px; /* Align with status bar top padding */
+            left: 50%;
+            transform: translateX(-50%);
+            width: 24px; /* Smaller width for punch-hole */
+            height: 24px; /* Smaller height for punch-hole */
+            background: #111;
+            border-radius: 50%; /* Make it circular */
+            z-index: 25; /* Ensure notch is above status bar background if any */
+        }
+
+        .main-content {
+            flex-grow: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 80px;
+        }
+        
+        .main-clock {
+            font-size: 80px;
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            width: 100%;
+            padding: 0 10px;
+            margin-top: 20px;
+            flex-grow: 1;
+        }
+        
+        .app-icon {
+            aspect-ratio: 1 / 1;
+            border-radius: 22px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .app-icon:active { transform: scale(0.9); }
+        .app-icon .icon-bg {
+            width: 64px;
+            height: 64px;
+            border-radius: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 4px;
+        }
+        .app-icon span {
+            color: white;
+            font-size: 12px;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+        }
+
+        .dock {
+            width: calc(100% - 20px);
+            margin: 0 auto 10px auto;
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(25px) saturate(1.8);
+            border-radius: 28px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+        
+        .dock .app-icon .icon-bg { width: 60px; height: 60px; }
+        .dock .app-icon span { display: none; }
+        
+        /* App Screens */
+        .app-screen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            opacity: 0;
+            pointer-events: none; /* Crucial: Prevents interaction when hidden */
+            transform-origin: center center;
+            transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1), transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+            transform: scale(0.3);
+            z-index: 15;
+            display: flex; /* Ensure it's a flex container for content */
+            flex-direction: column; /* Default to column for internal content */
+            align-items: center; /* Default alignment */
+            justify-content: center; /* Default alignment */
+            font-size: 2rem;
+            font-weight: bold;
+            color: #333;
+            border-radius: 50px; /* Match phone container border radius */
+            overflow: hidden; /* Hide content outside bounds during transition */
+
+            /* Add padding for status bar */
+            padding-top: 50px; /* Adjust based on status bar height */
+            box-sizing: border-box;
+        }
+        .app-screen.visible {
+            opacity: 1;
+            pointer-events: auto; /* Allows interaction when visible */
+            transform: scale(1);
+        }
+        
+        /* Browser App Specific Styles */
+        #browserApp .content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+        }
+        #browserApp .google-logo {
+            width: 150px;
+            margin-bottom: 20px;
+        }
+        #browserApp .search-bar {
+            width: 300px;
+            padding: 12px 20px;
+            border-radius: 25px;
+            border: 1px solid #ddd;
+            font-size: 16px;
+            margin-bottom: 10px;
+        }
+        #browserApp .search-button {
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: none;
+            background-color: #f8f9fa;
+            cursor: pointer;
+        }
+        #browserApp .powered-by {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #777;
+        }
+
+        /* Gallery App Specific Styles */
+        #galleryApp {
+            background-color: #222; /* Set background directly on app-screen for gallery */
+        }
+        #galleryApp .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            padding: 10px;
+            overflow-y: auto;
+            width: 100%;
+            height: 100%;
+        }
+        #galleryApp .gallery-item {
+            width: 100%;
+            padding-top: 100%; /* 1:1 Aspect Ratio */
+            position: relative;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        #galleryApp .gallery-item img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.2s ease;
+        }
+        #galleryApp .gallery-item img:active {
+            transform: scale(0.95);
+        }
+
+        /* Phone App Dial Pad Styles */
+        #phoneApp {
+            background-color: #1a1a1a;
+            color: white;
+            justify-content: space-between; /* Distribute content and tabs */
+            padding: 0; /* Remove padding from app-screen itself */
+        }
+        #phoneApp .tab-nav {
+            width: 100%;
+            background-color: #000;
+            padding: 8px 0;
+            border-top: 1px solid #333; /* Border at the top for bottom tabs */
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            flex-shrink: 0; /* Prevent shrinking */
+        }
+        #phoneApp .tab-button {
+            padding: 8px 12px;
+            border-radius: 20px;
+            color: #ccc;
+            background-color: transparent;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+        #phoneApp .tab-button.active {
+            background-color: #333;
+            color: white;
+        }
+        #phoneApp .tab-content {
+            width: 100%;
+            flex-grow: 1;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            display: none; /* Hidden by default, managed by JS */
+        }
+        #phoneApp .tab-content.active {
+            display: flex; /* Show active tab */
+        }
+
+        /* Dial Pad specific styles within tab-content */
+        #dialPadTab {
+            flex-direction: column;
+            justify-content: flex-end; /* Align dial pad to bottom */
+            align-items: center;
+        }
+
+        #phoneApp .dial-display {
+            font-size: 2.5rem;
+            font-weight: 300;
+            min-height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            margin-bottom: 20px;
+            word-break: break-all;
+            text-align: center;
+            padding: 0 10px;
+        }
+        #phoneApp .dial-pad-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 300px;
+        }
+        #phoneApp .dial-button {
+            background-color: #333;
+            color: white;
+            border-radius: 50%;
+            width: 70px;
+            height: 70px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        #phoneApp .dial-button:active {
+            background-color: #555;
+            transform: scale(0.95);
+        }
+        #phoneApp .dial-button .sub-text {
+            font-size: 0.7rem;
+            font-weight: 400;
+            margin-top: -5px;
+            opacity: 0.8;
+        }
+        #phoneApp .dial-button.action-button {
+            background-color: transparent;
+            box-shadow: none;
+            font-size: 1.5rem;
+        }
+        #phoneApp .dial-button.call-button {
+            background-color: #4CAF50;
+            color: white;
+        }
+        #phoneApp .dial-button.call-button:active {
+            background-color: #45a049;
+        }
+        #phoneApp .dial-button.delete-button svg {
+            width: 30px;
+            height: 30px;
+            color: white;
+        }
+        #phoneApp .dial-actions {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 300px;
+            margin-top: 20px;
+        }
+        #phoneApp .dial-action-button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 10px;
+            border-radius: 50%;
+            transition: background-color 0.2s ease;
+        }
+        #phoneApp .dial-action-button:active {
+            background-color: rgba(255,255,255,0.1);
+        }
+
+        /* Dial Pad Animation */
+        .dial-pad-animated {
+            transform: scale(0);
+            opacity: 0;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+            transform-origin: center bottom; /* Animate from bottom center */
+        }
+        .dial-pad-animated.show {
+            transform: scale(1);
+            opacity: 1;
+        }
+
+        /* YouTube App Styles */
+        #youtubeApp {
+            background-color: #181818;
+            color: white;
+            padding: 0; /* Reset padding to manage internally */
+            justify-content: flex-start; /* Align content to top */
+        }
+        #youtubeApp .youtube-header {
+            width: 100%;
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #202020;
+            flex-shrink: 0;
+        }
+        #youtubeApp .youtube-logo {
+            height: 25px;
+        }
+        #youtubeApp .youtube-search-bar {
+            flex-grow: 1;
+            margin: 0 10px;
+            padding: 8px 15px;
+            border-radius: 20px;
+            border: 1px solid #3a3a3a;
+            background-color: #3a3a3a;
+            color: white;
+            font-size: 14px;
+        }
+        #youtubeApp .youtube-search-button {
+            background-color: #3a3a3a;
+            padding: 8px 12px;
+            border-radius: 20px;
+            color: white;
+            cursor: pointer;
+        }
+        #youtubeApp .youtube-content {
+            flex-grow: 1;
+            width: 100%;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        #youtubeApp .video-card {
+            background-color: #282828;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        #youtubeApp .video-thumbnail {
+            width: 100%;
+            height: 180px;
+            background-color: #444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            color: #ccc;
+        }
+        #youtubeApp .video-info {
+            padding: 10px;
+        }
+        #youtubeApp .video-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        #youtubeApp .video-details {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        /* Bolo App Styles (AI Chatbot) */
+        #boloApp {
+            background-color: #2c2c2c;
+            color: white;
+            padding: 0; /* Reset padding to manage internally */
+            justify-content: space-between; /* Content and input at ends */
+        }
+        #boloApp .chat-display {
+            flex-grow: 1;
+            width: 100%;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .message-bubble {
+            max-width: 80%;
+            padding: 6px 10px; /* Smaller padding */
+            border-radius: 12px; /* Smaller border radius */
+            margin-bottom: 8px; /* Smaller margin */
+            word-wrap: break-word;
+            font-size: 0.9rem; /* Smaller font size */
+        }
+        .user-message {
+            background-color: #007bff;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        .ai-message {
+            background-color: #444;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+        #boloApp .chat-input-area {
+            width: 100%;
+            padding: 8px 12px; /* Smaller padding */
+            background-color: #1c1c1c;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        #boloApp .chat-input {
+            flex-grow: 1;
+            padding: 8px 12px; /* Smaller padding */
+            border-radius: 20px; /* Smaller border radius */
+            border: 1px solid #555;
+            background-color: #333;
+            color: white;
+            font-size: 14px; /* Smaller font size */
+            margin-right: 8px; /* Smaller margin */
+        }
+        #boloApp .send-button {
+            background-color: #007bff;
+            color: white;
+            width: 36px; /* Smaller width */
+            height: 36px; /* Smaller height */
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        #boloApp .send-button:active {
+            background-color: #0056b3;
+        }
+        .loading-indicator {
+            align-self: flex-start;
+            font-size: 0.8rem; /* Smaller loading indicator font */
+            color: #aaa;
+            margin-top: 5px;
+            margin-left: 15px;
+        }
+
+        /* Messages App Styles */
+        #messagesApp {
+            background-color: #1a1a1a;
+            color: white;
+            padding: 0; /* Reset padding to manage internally */
+            justify-content: space-between; /* Content and input at ends */
+            position: relative; /* For plus button positioning */
+        }
+        #messagesApp .messages-list {
+            flex-grow: 1;
+            width: 100%;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .message-entry {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 15px;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+            font-size: 0.95rem;
+        }
+        .sent-message {
+            background-color: #007bff;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        .received-message {
+            background-color: #444;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+        #messagesApp .new-message-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: #007bff;
+            color: white;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            z-index: 20; /* Above message list */
+        }
+        #messagesApp .new-message-button:active {
+            transform: scale(0.95);
+        }
+
+        /* Settings App Styles */
+        #settingsApp {
+            background-color: #f0f0f0;
+            color: #333;
+            padding: 0; /* Reset padding to manage internally */
+            justify-content: flex-start; /* Align content to top */
+        }
+        #settingsApp .settings-header {
+            width: 100%;
+            padding: 15px 20px;
+            background-color: #e0e0e0;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-bottom: 1px solid #ccc;
+            flex-shrink: 0;
+        }
+        #settingsApp .settings-list {
+            flex-grow: 1;
+            width: 100%;
+            overflow-y: auto;
+            padding: 10px 0;
+        }
+        #settingsApp .settings-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        #settingsApp .settings-item:hover {
+            background-color: #e8e8e8;
+        }
+        #settingsApp .settings-item svg {
+            width: 24px;
+            height: 24px;
+            margin-right: 15px;
+            color: #555;
+        }
+        #settingsApp .settings-item span {
+            font-size: 1rem;
+            flex-grow: 1;
+        }
+        #settingsApp .settings-item .arrow-icon {
+            color: #aaa;
+        }
+
+        #myPhoneScreen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: #f0f0f0;
+            color: #333;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding-top: 50px; /* For status bar */
+            box-sizing: border-box;
+            z-index: 16; /* Above other app screens */
+        }
+        #myPhoneScreen.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #myPhoneScreen h3 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            margin-top: 20px;
+        }
+        #myPhoneScreen p {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        #myPhoneScreen .back-button {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #333;
+        }
+
+
+        /* Permission Modal */
+        .permission-modal-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.3);
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+        }
+        .permission-modal-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .permission-modal {
+            background: #f1f1f1;
+            width: 100%;
+            padding: 20px;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+        }
+        .permission-modal-overlay.visible .permission-modal {
+            transform: translateY(0);
+        }
+        .permission-modal h3 { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
+        .permission-modal p { font-size: 14px; color: #555; margin-bottom: 20px; }
+        .permission-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .permission-buttons button { padding: 10px 20px; border-radius: 20px; border: none; font-weight: 500; cursor: pointer; }
+        .permission-deny { background: #e0e0e0; }
+        .permission-allow { background: #34a853; color: white; }
+
+        /* Navigation Bar (Samsung-like) */
+        .navigation-bar { 
+            height: 60px; 
+            width: 100%; 
+            background: #000; /* Darker background for nav bar */
+            display: flex; 
+            justify-content: space-around; 
+            align-items: center; 
+            z-index: 100; 
+            border-top: 1px solid #222; /* Subtle separator */
+        }
+        .nav-btn { 
+            width: 48px; /* Larger touch target */
+            height: 48px; 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            border-radius: 50%; /* Make the button area round */
+            transition: background-color 0.2s ease, transform 0.1s ease; 
+        }
+        .nav-btn:hover {
+            background-color: rgba(255, 255, 255, 0.1); /* Subtle hover effect */
+        }
+        .nav-btn:active {
+            transform: scale(0.95); /* Click feedback */
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        .nav-btn svg {
+            color: #ccc; /* Icon color */
+            transition: color 0.2s ease;
+        }
+        .nav-btn:hover svg {
+            color: #fff; /* Icon color on hover */
+        }
+
+        /* Recents Screen */
+        #recentsScreen {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7); /* Dark overlay for recents */
+            backdrop-filter: blur(15px);
+            z-index: 20; /* Above launcher, below apps */
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 80px;
+            overflow-y: auto; /* Enable scrolling for many recent apps */
+            border-radius: 50px; /* Match phone container border radius */
+        }
+        #recentsScreen.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .recent-app-card {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            width: 80%;
+            height: 180px; /* Fixed height for cards */
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.3s ease; /* Added opacity for clear animation */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.5rem;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .recent-app-card:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+        .recent-app-card .app-title {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            font-size: 1rem;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 5px 10px;
+            border-radius: 8px;
+        }
+        /* Animation for clearing recent apps */
+        .recent-app-card.clearing {
+            opacity: 0;
+            transform: translateY(20px) scale(0.8);
+        }
+
+        /* Notification and Control Panels */
+        .slide-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: auto; /* Auto height to fit content */
+            max-height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(25px) saturate(1.8);
+            border-bottom-left-radius: 30px;
+            border-bottom-right-radius: 30px;
+            transform: translateY(-100%);
+            /* Updated transition for smoother animation */
+            transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1), backdrop-filter 0.4s ease;
+            z-index: 40; /* Above launcher, below permission modal */
+            padding-top: 50px; /* Space for status bar/notch */
+            padding-bottom: 20px;
+            box-sizing: border-box;
+            overflow-y: auto; /* Enable scrolling if content is too long */
+        }
+        .slide-panel.visible {
+            transform: translateY(0);
+        }
+
+        .notification-panel {
+            color: white;
+            padding: 60px 20px 20px;
+        }
+        .notification-panel h4 {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .notification-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .notification-item .icon {
+            width: 30px;
+            height: 30px;
+            background: #333;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .notification-item .content h5 {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .notification-item .content p {
+            font-size: 0.8rem;
+            color: #ccc;
+        }
+
+        .control-center {
+            padding: 60px 20px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+        }
+        .control-tile {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 18px;
+            width: calc(50% - 10px); /* Two columns */
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            color: white;
+            transition: background-color 0.2s ease;
+            cursor: pointer; /* Make tiles clickable */
+        }
+        .control-tile.active {
+            background: #007bff; /* Example active color */
+        }
+        .control-tile .icon-wrapper {
+            width: 45px;
+            height: 45px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+        .control-tile.active .icon-wrapper {
+            background: white; /* Active icon background */
+        }
+        .control-tile.active .icon-wrapper svg {
+            color: #007bff; /* Active icon color */
+        }
+        .control-tile .icon-wrapper svg {
+            width: 24px;
+            height: 24px;
+            color: white;
+        }
+        .control-tile span {
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .control-slider-group {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 18px;
+            padding: 15px;
+        }
+        .control-slider-group input[type="range"] {
+            flex-grow: 1;
+            -webkit-appearance: none;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            outline: none;
+            border-radius: 2px;
+        }
+        .control-slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+        .control-slider-group input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+        }
+        .control-slider-group svg {
+            color: white;
+            width: 24px;
+            height: 24px;
+        }
+
+        /* Brightness Overlay */
+        .brightness-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0); /* Starts fully transparent */
+            pointer-events: none; /* Allows clicks to pass through */
+            z-index: 9; /* Below launcher-screen (z-index 10) and other panels */
+            transition: background-color 0.1s ease; /* Smooth transition for brightness change */
+            border-radius: 50px; /* Match phone container */
+        }
+
+        /* Toast Message for RAM cleared */
+        .toast-message {
+            position: absolute;
+            bottom: 80px; /* Above navigation bar */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 100;
+            pointer-events: none;
+        }
+        .toast-message.show {
+            opacity: 1;
+        }
+
+        /* Responsive adjustments for smaller phone container */
+        @media (max-width: 420px) {
+            .main-clock {
+                font-size: 18vw;
+            }
+            .status-bar {
+                padding: 4vw 7vw 2.5vw;
+            }
+            .app-icon .icon-bg {
+                width: 16vw;
+                height: 16vw;
+            }
+            .app-icon span {
+                font-size: 3vw;
+            }
+            .dock .app-icon .icon-bg {
+                width: 15vw;
+                height: 15vw;
+            }
+            .dock {
+                padding: 3vw;
+                width: calc(100% - 5vw);
+            }
+            .nav-btn {
+                width: 12vw;
+                height: 12vw;
+            }
+            .nav-btn svg {
+                width: 6vw;
+                height: 6vw;
+            }
+            .permission-modal {
+                padding: 5vw;
+            }
+            .permission-modal h3 {
+                font-size: 4.5vw;
+            }
+            .permission-modal p {
+                font-size: 3.5vw;
+            }
+            .permission-buttons button {
+                padding: 2.5vw 5vw;
+                font-size: 3.5vw;
+            }
+            #browserApp .search-bar {
+                width: 75vw;
+                padding: 3vw 5vw;
+                font-size: 4vw;
+            }
+            #browserApp .google-logo {
+                width: 40vw;
+            }
+            .recent-app-card {
+                width: 90%;
+                height: 45vw;
+                font-size: 5vw;
+            }
+            .recent-app-card .app-title {
+                font-size: 3.5vw;
+            }
+            .notification-panel, .control-center {
+                padding: 15vw 5vw 5vw;
+            }
+            .notification-panel h4 {
+                font-size: 5vw;
+            }
+            .notification-item {
+                padding: 4vw;
+            }
+            .notification-item .icon {
+                width: 8vw;
+                height: 8vw;
+            }
+            .notification-item .content h5 {
+                font-size: 4vw;
+            }
+            .notification-item .content p {
+                font-size: 3.5vw;
+            }
+            .control-tile {
+                width: calc(50% - 7.5px);
+                padding: 4vw;
+            }
+            .control-tile .icon-wrapper {
+                width: 12vw;
+                height: 12vw;
+            }
+            .control-tile .icon-wrapper svg {
+                width: 6vw;
+                height: 6vw;
+            }
+            .control-tile span {
+                font-size: 3.5vw;
+            }
+            .control-slider-group {
+                padding: 4vw;
+            }
+            .control-slider-group svg {
+                width: 6vw;
+                height: 6vw;
+            }
+            .control-slider-group input[type="range"]::-webkit-slider-thumb {
+                width: 5vw;
+                height: 5vw;
+            }
+            .control-slider-group input[type="range"]::-moz-range-thumb {
+                width: 5vw;
+                height: 5vw;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-container">
+        <!-- Brightness Overlay - Controls overall screen brightness -->
+        <div id="brightnessOverlay" class="brightness-overlay"></div>
+
+        <div class="screen-content" id="screenContent">
+            <!-- Launcher Screen -->
+            <div class="launcher-screen" id="launcherScreen">
+                <div class="status-bar">
+                    <span id="statusBarTime"></span>
+                    <div class="flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" x2="12.01" y1="20" y2="20"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="20" x2="20" y1="11" y2="13"/><line x1="6" x2="6" y1="11" y2="13"/><line x1="10" x2="10" y1="11" y2="13"/><line x1="14" x2="14" y1="11" y2="13"/></svg>
+                    </div>
+                </div>
+                <!-- Punch-hole notch -->
+                <div class="notch"></div>
+                <div class="main-content">
+                    <div class="main-clock" id="mainClock"></div>
+                    <div class="apps-grid"></div>
+                </div>
+                <div class="dock"></div>
+            </div>
+
+            <!-- App Screens -->
+            <div id="phoneApp" class="app-screen">
+                <div class="flex flex-col h-full w-full">
+                    <!-- Tab Content -->
+                    <div id="dialPadTab" class="tab-content flex-col flex-grow justify-end items-center pb-20 p-4 dial-pad-animated">
+                        <div id="dialDisplay" class="dial-display"></div>
+                        <div class="dial-pad-grid">
+                            <div class="dial-button" data-value="1">1</div>
+                            <div class="dial-button" data-value="2">2<span class="sub-text">ABC</span></div>
+                            <div class="dial-button" data-value="3">3<span class="sub-text">DEF</span></div>
+                            <div class="dial-button" data-value="4">4<span class="sub-text">GHI</span></div>
+                            <div class="dial-button" data-value="5">5<span class="sub-text">JKL</span></div>
+                            <div class="dial-button" data-value="6">6<span class="sub-text">MNO</span></div>
+                            <div class="dial-button" data-value="7">7<span class="sub-text">PQRS</span></div>
+                            <div class="dial-button" data-value="8">8<span class="sub-text">TUV</span></div>
+                            <div class="dial-button" data-value="9">9<span class="sub-text">WXYZ</span></div>
+                            <div class="dial-button" data-value="*">*</div>
+                            <div class="dial-button" data-value="0">0<span class="sub-text">+</span></div>
+                            <div class="dial-button" data-value="#">#</div>
+                        </div>
+                        <div class="dial-actions">
+                            <div class="dial-action-button"></div> <!-- Placeholder for alignment -->
+                            <div class="dial-button call-button" id="callButton">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            </div>
+                            <div class="dial-button action-button" id="deleteButton">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" x2="12" y1="9" y2="15"/><line x1="12" x2="18" y1="9" y2="15"/></svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="contactsTab" class="tab-content flex-col justify-start items-center p-4 bg-gray-700 text-white">
+                        <h5 class="text-2xl font-bold mb-4 mt-4">Contacts</h5>
+                        <ul class="text-lg text-gray-300 w-full px-4">
+                            <li class="border-b border-gray-600 py-2">John Doe <span class="text-sm text-gray-400">(555) 123-4567</span></li>
+                            <li class="border-b border-gray-600 py-2">Jane Smith <span class="text-sm text-gray-400">(555) 987-6543</span></li>
+                            <li class="border-b border-gray-600 py-2">Alice Johnson <span class="text-sm text-gray-400">(555) 111-2222</span></li>
+                            <li class="py-2">Bob Williams <span class="text-sm text-gray-400">(555) 333-4444</span></li>
+                        </ul>
+                    </div>
+
+                    <div id="historyTab" class="tab-content flex-col justify-start items-center p-4 bg-gray-700 text-white">
+                        <h5 class="text-2xl font-bold mb-4 mt-4">Call History</h5>
+                        <ul class="text-lg text-gray-300 w-full px-4">
+                            <li class="border-b border-gray-600 py-2">Outgoing: (555) 123-4567 <span class="text-sm text-gray-400">Today, 10:30 AM</span></li>
+                            <li class="border-b border-gray-600 py-2">Incoming: (555) 987-6543 <span class="text-sm text-red-400">Yesterday, 03:15 PM</span></li>
+                            <li class="border-b border-gray-600 py-2">Missed: (555) 111-2222 <span class="text-sm text-red-400">Today, 09:00 AM</span></li>
+                            <li class="py-2">Outgoing: (555) 333-4444 <span class="text-sm text-gray-400">July 22, 06:00 PM</span></li>
+                        </ul>
+                    </div>
+
+                    <!-- Tab Navigation (Moved to bottom) -->
+                    <div class="tab-nav flex justify-around bg-gray-800 text-white p-2">
+                        <button class="tab-button flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200" data-tab="dialPad">Dial Pad</button>
+                        <button class="tab-button flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200" data-tab="contacts">Contacts</button>
+                        <button class="tab-button flex-1 py-2 rounded-lg text-sm font-medium transition-colors duration-200" data-tab="history">History</button>
+                    </div>
+                </div>
+            </div>
+            <div id="messagesApp" class="app-screen">
+                <div class="messages-list">
+                    <div class="received-message message-entry">Hey there! How are you?</div>
+                    <div class="sent-message message-entry">I'm doing great, thanks! Just working on a new project.</div>
+                    <div class="received-message message-entry">That sounds interesting! What kind of project?</div>
+                    <div class="sent-message message-entry">It's a mobile launcher simulation. Pretty cool!</div>
+                    <div class="received-message message-entry">Nice! Let me know when it's ready.</div>
+                </div>
+                <div class="new-message-button">+</div>
+            </div>
+            <div id="galleryApp" class="app-screen">
+                <div class="gallery-grid">
+                    <!-- Placeholder images for gallery -->
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/FFD700/000000?text=Image+1" alt="Image 1"></div>
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/ADD8E6/000000?text=Image+2" alt="Image 2"></div>
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/90EE90/000000?text=Image+3" alt="Image 3"></div>
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/FF6347/FFFFFF?text=Image+4" alt="Image 4"></div>
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/DA70D6/FFFFFF?text=Image+5" alt="Image 5"></div>
+                    <div class="gallery-item"><img src="https://placehold.co/150x150/87CEEB/FFFFFF?text=Image+6" alt="Image 6"></div>
+                </div>
+            </div>
+            <div id="settingsApp" class="app-screen">
+                <div class="settings-header">Settings</div>
+                <div class="settings-list">
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="20"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/></svg>
+                        <span>Network & internet</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10L12 22V2l5 5L7 17"/></svg>
+                        <span>Connected devices</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 0-9.09 5.37A10 10 0 0 0 12 22a10 10 0 0 0 9.09-14.63A10 10 0 0 0 12 2z"/></svg>
+                        <span>Display</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M22.39 2.61a15 15 0 0 1 0 19.78"/></svg>
+                        <span>Sound & vibration</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-10 8h19l-2-8h6L13 2z"/></svg>
+                        <span>Battery</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        <span>Storage</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                    <div class="settings-item" id="myPhoneOption">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                        <span>My Phone</span>
+                        <svg class="arrow-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </div>
+                </div>
+            </div>
+            <div id="myPhoneScreen">
+                <button class="back-button" id="myPhoneBackBtn">&lt;</button>
+                <h3>My Phone Details</h3>
+                <p>It's a demo phone</p>
+                <p>Created by Asif Khan</p>
+                <p>Email: Asifmia5454@gmail.com</p>
+            </div>
+            <div id="musicApp" class="app-screen bg-pink-200 flex flex-col justify-center items-center">
+                <p class="text-4xl text-pink-700 mb-4">Music App</p>
+                <p class="text-lg text-pink-600">Enjoy your favorite tunes.</p>
+            </div>
+            <div id="filesApp" class="app-screen bg-yellow-200 flex flex-col justify-center items-center">
+                <p class="text-4xl text-yellow-700 mb-4">Files App</p>
+                <p class="text-lg text-yellow-600">Manage your files.</p>
+            </div>
+            <div id="browserApp" class="app-screen bg-white">
+                <div class="content">
+                    <img src="https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png" alt="Google">
+                    <input type="text" id="searchInput" class="search-bar" placeholder="Search Google or type a URL">
+                    <button id="searchButton" class="search-button">Google Search</button>
+                    <p class="powered-by">Powered by Google</p>
+                </div>
+            </div>
+            <div id="youtubeApp" class="app-screen">
+                <div class="youtube-header">
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/09/YouTube_full-color_icon_%282017%29.svg/2560px-YouTube_full-color_icon_%282017%29.svg.png" alt="YouTube Logo" class="youtube-logo">
+                    <input type="text" id="youtubeSearchBar" class="youtube-search-bar" placeholder="Search YouTube">
+                    <button id="youtubeSearchButton" class="youtube-search-button">Search</button>
+                </div>
+                <div class="youtube-content">
+                    <div class="video-card" data-video-id="dQw4w9WgXcQ">
+                        <div class="video-thumbnail" style="background-image: url('https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg'); background-size: cover; background-position: center;"></div>
+                        <div class="video-info">
+                            <div class="video-title">Rick Astley - Never Gonna Give You Up (Official Music Video)</div>
+                            <div class="video-details">RickAstleyVEVO • 1.5B views • 13 years ago</div>
+                        </div>
+                    </div>
+                    <div class="video-card" data-video-id="LXb3EKWsInQ">
+                        <div class="video-thumbnail" style="background-image: url('https://i.ytimg.com/vi/LXb3EKWsInQ/hqdefault.jpg'); background-size: cover; background-position: center;"></div>
+                        <div class="video-info">
+                            <div class="video-title">Lo-fi hip hop radio - beats to relax/study to</div>
+                            <div class="video-details">Lofi Girl • 10M views • 3 years ago</div>
+                        </div>
+                    </div>
+                     <div class="video-card" data-video-id="kXYiU_JCYtU">
+                        <div class="video-thumbnail" style="background-image: url('https://i.ytimg.com/vi/kXYiU_JCYtU/hqdefault.jpg'); background-size: cover; background-position: center;"></div>
+                        <div class="video-info">
+                            <div class="video-title">The Best Of Queen - Greatest Hits (Full Album)</div>
+                            <div class="video-details">Queen Official • 500M views • 5 years ago</div>
+                        </div>
+                    </div>
+                     <div class="video-card" data-video-id="JGwWNGJdvx8">
+                        <div class="video-thumbnail" style="background-image: url('https://i.ytimg.com/vi/JGwWNGJdvx8/hqdefault.jpg'); background-size: cover; background-position: center;"></div>
+                        <div class="video-info">
+                            <div class="video-title">Gangnam Style (강남스타일) M/V</div>
+                            <div class="video-details">PSY • 4.8B views • 12 years ago</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="boloApp" class="app-screen">
+                <div class="chat-display" id="chatDisplay">
+                    <div class="ai-message message-bubble">Hello! I am Bolo, your AI assistant. How can I help you today?</div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" class="chat-input" placeholder="Type your message...">
+                    <button id="sendButton" class="send-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Permission Modal -->
+            <div class="permission-modal-overlay" id="permissionModal">
+                <div class="permission-modal">
+                    <h3 id="permissionTitle"></h3>
+                    <p id="permissionText"></p>
+                    <div class="permission-buttons">
+                        <button class="permission-deny" id="denyBtn">Deny</button>
+                        <button class="permission-allow" id="allowBtn">Allow</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recents Screen -->
+            <div id="recentsScreen">
+                <div id="recentAppsContainer" class="flex flex-col items-center w-full mt-4">
+                    <!-- Recent app cards will be dynamically added here -->
+                </div>
+                <div id="noRecentAppsMessage" class="text-white text-lg mt-20 hidden">No recent apps</div>
+                <button id="clearRecentsBtn" class="bg-red-500 text-white px-4 py-2 rounded-full text-lg flex items-center justify-center gap-2 mt-4 shadow-lg transition-transform duration-200 active:scale-95 hidden">
+                    <span class="text-2xl">🚫</span> Clear All
+                </button>
+            </div>
+
+            <!-- Notification Panel -->
+            <div id="notificationPanel" class="slide-panel notification-panel">
+                <h4>Notifications</h4>
+                <div class="notification-item">
+                    <div class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    </div>
+                    <div class="content">
+                        <h5>New Message</h5>
+                        <p>You have 1 unread message from John Doe.</p>
+                    </div>
+                </div>
+                <div class="notification-item">
+                    <div class="icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div class="content">
+                        <h5>System Update</h5>
+                        <p>A new system update is available for download.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Control Center -->
+            <div id="controlCenter" class="slide-panel control-center">
+                <div class="control-tile" id="wifiToggle">
+                    <div class="icon-wrapper">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12.01" y1="20" y2="20"/><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/></svg>
+                    </div>
+                    <span>Wi-Fi</span>
+                </div>
+                <div class="control-tile" id="bluetoothToggle">
+                    <div class="icon-wrapper">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 7 10 10L12 22V2l5 5L7 17"/></svg>
+                    </div>
+                    <span>Bluetooth</span>
+                </div>
+                <div class="control-tile" id="hotspotToggle">
+                    <div class="icon-wrapper">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 20.75c0 .41.34.75.75.75h2.5c.41 0 .75-.34.75-.75V19h-4v1.75z"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/></svg>
+                    </div>
+                    <span>Hotspot</span>
+                </div>
+                <div class="control-tile">
+                    <div class="icon-wrapper">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 0-9.09 5.37A10 10 0 0 0 12 22a10 10 0 0 0 9.09-14.63A10 10 0 0 0 12 2z"/></svg>
+                    </div>
+                    <span>Rotation Lock</span>
+                </div>
+
+                <div class="control-slider-group">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 0 0-9.09 5.37A10 10 0 0 0 12 22a10 10 0 0 0 9.09-14.63A10 10 0 0 0 12 2z"/></svg>
+                    <input type="range" id="brightnessSlider" min="0.1" max="1" step="0.01" value="1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.93 19.07l1.41-1.41"/><path d="M17.66 6.34l1.41-1.41"/></svg>
+                </div>
+
+                <div class="control-slider-group">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M22.39 2.61a15 15 0 0 1 0 19.78"/></svg>
+                    <input type="range" id="volumeSlider" min="0" max="100" step="1" value="70">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg>
+                </div>
+            </div>
+
+        </div>
+        
+        <!-- Navigation Bar -->
+        <div class="navigation-bar">
+            <!-- Samsung-like Recents Button (Two overlapping squares) -->
+            <div class="nav-btn" id="recentsBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="10" height="10" rx="2" ry="2"></rect>
+                    <rect x="11" y="11" width="10" height="10" rx="2" ry="2"></rect>
+                </svg>
+            </div>
+            <!-- Samsung-like Home Button (Circle) -->
+            <div class="nav-btn" id="homeBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                </svg>
+            </div>
+            <!-- Samsung-like Back Button (Left-pointing triangle) -->
+            <div class="nav-btn" id="backBtn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M15 18l-6-6 6-6"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const launcherScreen = document.getElementById('launcherScreen');
+            const screenContent = document.getElementById('screenContent'); // Added for swipe detection
+            const homeBtn = document.getElementById('homeBtn');
+            const backBtn = document.getElementById('backBtn');
+            const recentsBtn = document.getElementById('recentsBtn');
+            
+            const statusBarTime = document.getElementById('statusBarTime');
+            const mainClock = document.getElementById('mainClock');
+
+            const appsGrid = document.querySelector('.apps-grid');
+            const dock = document.querySelector('.dock');
+
+            // Permission Modal elements
+            const permissionModal = document.getElementById('permissionModal');
+            const permissionTitle = document.getElementById('permissionTitle');
+            const permissionText = document.getElementById('permissionText');
+            const allowBtn = document.getElementById('allowBtn');
+            const denyBtn = document.getElementById('denyBtn');
+
+            // Browser App elements
+            const searchInput = document.getElementById('searchInput');
+            const searchButton = document.getElementById('searchButton');
+
+            // YouTube App elements
+            const youtubeSearchBar = document.getElementById('youtubeSearchBar');
+            const youtubeSearchButton = document.getElementById('youtubeSearchButton');
+            const youtubeVideoCards = document.querySelectorAll('#youtubeApp .video-card');
+
+
+            // Bolo App elements
+            const chatDisplay = document.getElementById('chatDisplay');
+            const chatInput = document.getElementById('chatInput');
+            const sendButton = document.getElementById('sendButton');
+
+            // Recents Screen elements
+            const recentsScreen = document.getElementById('recentsScreen');
+            const recentAppsContainer = document.getElementById('recentAppsContainer'); // New container for app cards
+            const noRecentAppsMessage = document.getElementById('noRecentAppsMessage'); // New message element
+            const clearRecentsBtn = document.getElementById('clearRecentsBtn'); // New clear recents button
+
+            // Notification and Control Center elements
+            const notificationPanel = document.getElementById('notificationPanel');
+            const controlCenter = document.getElementById('controlCenter');
+            const brightnessSlider = document.getElementById('brightnessSlider');
+            const volumeSlider = document.getElementById('volumeSlider');
+            const wifiToggle = document.getElementById('wifiToggle');
+            const bluetoothToggle = document.getElementById('bluetoothToggle');
+            const hotspotToggle = document.getElementById('hotspotToggle');
+            const brightnessOverlay = document.getElementById('brightnessOverlay'); // New brightness overlay
+
+            // Phone App elements
+            const dialDisplay = document.getElementById('dialDisplay');
+            const dialPadButtons = document.querySelectorAll('#phoneApp .dial-button[data-value]');
+            const callButton = document.getElementById('callButton');
+            const deleteButton = document.getElementById('deleteButton');
+            const phoneTabButtons = document.querySelectorAll('#phoneApp .tab-button');
+            const dialPadTab = document.getElementById('dialPadTab');
+            const contactsTab = document.getElementById('contactsTab');
+            const historyTab = document.getElementById('historyTab');
+
+            // Settings App elements
+            const settingsApp = document.getElementById('settingsApp');
+            const myPhoneOption = document.getElementById('myPhoneOption');
+            const myPhoneScreen = document.getElementById('myPhoneScreen');
+            const myPhoneBackBtn = document.getElementById('myPhoneBackBtn');
+
+
+            let currentApp = null;
+            let onPermissionGranted = null;
+            let recentAppsHistory = []; // To store recently opened app IDs
+            const MAX_RECENT_APPS = 5; // Maximum number of apps to show in recents
+            let lastOpenedAppIconElement = null; // To store the icon element for close animation
+
+            // Store granted permissions in localStorage
+            let grantedPermissions = JSON.parse(localStorage.getItem('grantedPermissions')) || {};
+
+            // Touch swipe variables
+            let touchStartX = 0;
+            let touchStartY = 0;
+            const SWIPE_THRESHOLD = 50; // Minimum distance for a swipe
+            const TOP_SWIPE_AREA_HEIGHT = 80; // Area from top to detect panel swipe
+
+            const appData = [
+                { id: 'phoneApp', name: 'Phone', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>', color: 'bg-green-500', inDock: true, requiresPermission: 'call' },
+                { id: 'messagesApp', name: 'Messages', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>', color: 'bg-blue-500', inDock: true },
+                { id: 'browserApp', name: 'Browser', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>', color: 'bg-white', inDock: true },
+                { id: 'galleryApp', name: 'Gallery', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>', color: 'bg-purple-500', inDock: false, requiresPermission: 'files' },
+                { id: 'settingsApp', name: 'Settings', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l-.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>', color: 'bg-gray-200', inDock: true },
+                { id: 'musicApp', name: 'Music', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>', color: 'bg-pink-500', inDock: false },
+                { id: 'filesApp', name: 'Files', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-4-4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2z"/></svg>', color: 'bg-yellow-500', inDock: false },
+                { id: 'youtubeApp', name: 'YouTube', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.42a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 12c0 2.64.29 5.36 2.46 6.58a2.78 2.78 0 0 0 1.94 2C5.12 20 12 20 12 20s6.88 0 8.6-.42a2.78 2.78 0 0 0 1.94-2A29 29 0 0 0 23 12c0-2.64-.29-5.36-2.46-6.58z"/><polygon points="10 15 15 12 10 9 10 15"></polygon></svg>', color: 'bg-red-600', inDock: false },
+                { id: 'boloApp', name: 'বলো', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 10h.01"></path><path d="M12 10h.01"></path><path d="M16 10h.01"></path></svg>', color: 'bg-blue-800', inDock: false },
+            ];
+            
+            // Function to create an app icon element
+            function createAppIcon(app) {
+                const appIcon = document.createElement('div');
+                appIcon.className = 'app-icon';
+                // Store the app ID on the icon for easy lookup later
+                appIcon.dataset.appId = app.id; 
+                appIcon.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent click from bubbling to screenContent
+                    handleAppClick(app, appIcon);
+                });
+                appIcon.innerHTML = `
+                    <div class="icon-bg ${app.color}">${app.icon}</div>
+                    <span>${app.name}</span>
+                `;
+                return appIcon;
+            }
+
+            // Populate app grid and dock
+            appData.forEach(app => {
+                const icon = createAppIcon(app);
+                if (app.inDock) dock.appendChild(icon);
+                else appsGrid.appendChild(icon);
+            });
+
+            // Update time in status bar and main clock
+            function updateTime() {
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                statusBarTime.textContent = timeString;
+                mainClock.textContent = timeString;
+            }
+            setInterval(updateTime, 1000);
+            updateTime(); // Initial call
+
+            // Handle app click, checking for permissions
+            function handleAppClick(app, iconElement) {
+                // Close any open panels or recents screen
+                closeAllPanels();
+
+                if (app.requiresPermission && !grantedPermissions[app.requiresPermission]) {
+                    requestPermission(app.requiresPermission, () => {
+                        openApp(app.id, iconElement);
+                    });
+                } else {
+                    openApp(app.id, iconElement);
+                }
+            }
+
+            // Open a specific app screen with iOS-like animation
+            function openApp(appId, iconElement) {
+                const appScreen = document.getElementById(appId);
+                if (!appScreen) return;
+
+                // Close any currently open app first
+                closeCurrentApp();
+
+                currentApp = appScreen;
+                lastOpenedAppIconElement = iconElement; // Store the icon element for close animation
+
+                // Calculate the center of the icon relative to the phone-container
+                const iconRect = iconElement.getBoundingClientRect();
+                const phoneContainerRect = screenContent.getBoundingClientRect();
+
+                const originX = iconRect.left + iconRect.width / 2 - phoneContainerRect.left;
+                const originY = iconRect.top + iconRect.height / 2 - phoneContainerRect.top;
+
+                // Set initial transform properties for animation
+                currentApp.style.transformOrigin = `${originX}px ${originY}px`;
+                currentApp.style.transform = `scale(0.1)`;
+                currentApp.style.opacity = '0';
+                currentApp.classList.add('visible'); // Make it visible but scaled down
+                currentApp.style.pointerEvents = 'auto'; // Enable clicks for this app
+
+                // Force reflow to ensure initial state is applied before transition
+                void currentApp.offsetWidth; 
+
+                // Start the transition
+                currentApp.style.transform = `scale(1)`;
+                currentApp.style.opacity = '1';
+                launcherScreen.classList.add('app-is-open');
+
+                // Add app to recent history
+                addAppToRecents(appId);
+
+                // If it's the phone app, show the contacts tab by default
+                if (appId === 'phoneApp') {
+                    showPhoneTab('contacts');
+                }
+            }
+
+            // Close the currently open app with iOS-like animation
+            function closeCurrentApp() {
+                if (currentApp) {
+                    currentApp.style.pointerEvents = 'none'; // Immediately disable clicks
+
+                    // If there's an icon to animate back to
+                    if (lastOpenedAppIconElement) {
+                        const iconRect = lastOpenedAppIconElement.getBoundingClientRect();
+                        const phoneContainerRect = screenContent.getBoundingClientRect();
+
+                        const originX = iconRect.left + iconRect.width / 2 - phoneContainerRect.left;
+                        const originY = iconRect.top + iconRect.height / 2 - phoneContainerRect.top;
+
+                        currentApp.style.transformOrigin = `${originX}px ${originY}px`;
+                        currentApp.style.transform = `scale(0.1)`;
+                        currentApp.style.opacity = '0';
+                    } else {
+                        // Fallback if no icon element was stored (e.g., direct open)
+                        currentApp.style.transform = `scale(0.1)`;
+                        currentApp.style.opacity = '0';
+                    }
+
+                    // Listen for the end of the transition to truly hide the app
+                    currentApp.addEventListener('transitionend', function handler() {
+                        currentApp.classList.remove('visible');
+                        currentApp.removeEventListener('transitionend', handler);
+                    }, { once: true }); // Ensure listener is removed after one use
+
+                    launcherScreen.classList.remove('app-is-open');
+                    currentApp = null;
+                    lastOpenedAppIconElement = null;
+                }
+            }
+
+            // Request a specific permission
+            function requestPermission(type, onGranted) {
+                onPermissionGranted = onGranted;
+                if (type === 'files') {
+                    permissionTitle.textContent = 'Allow Gallery to access photos and media on your device?';
+                    permissionText.textContent = 'This allows the app to view and manage your photos and videos.';
+                } else if (type === 'call') {
+                    permissionTitle.textContent = 'Allow Phone to make and manage phone calls?';
+                    permissionText.textContent = 'This allows the app to place calls and access your call history.';
+                }
+                launcherScreen.classList.add('permission-is-open');
+                permissionModal.classList.add('visible');
+            }
+
+            // Close the permission modal
+            function closePermissionModal() {
+                launcherScreen.classList.remove('permission-is-open');
+                permissionModal.classList.remove('visible');
+                onPermissionGranted = null;
+            }
+            
+            // Event listener for permission allow button
+            allowBtn.addEventListener('click', () => {
+                if (onPermissionGranted) {
+                    // Mark permission as granted
+                    const permissionType = permissionTitle.textContent.includes('Gallery') ? 'files' : 'call';
+                    grantedPermissions[permissionType] = true;
+                    localStorage.setItem('grantedPermissions', JSON.stringify(grantedPermissions));
+                    onPermissionGranted();
+                }
+                closePermissionModal();
+            });
+
+            // Event listener for permission deny button
+            denyBtn.addEventListener('click', closePermissionModal);
+
+            // Close all open panels (apps, permissions, recents, notifications, control center)
+            function closeAllPanels() {
+                closeCurrentApp();
+                closePermissionModal();
+                closeRecentsScreen();
+                closeNotificationPanel();
+                closeControlCenter();
+                closeMyPhoneScreen(); // Close My Phone screen if open
+            }
+
+            // Home button functionality
+            homeBtn.addEventListener('click', () => {
+                closeAllPanels();
+            });
+
+            // Back button functionality
+            backBtn.addEventListener('click', () => {
+                if (myPhoneScreen.classList.contains('visible')) {
+                    closeMyPhoneScreen();
+                    openApp('settingsApp', document.querySelector('.app-icon[data-app-id="settingsApp"]')); // Re-open settings app
+                } else if (permissionModal.classList.contains('visible')) {
+                    closePermissionModal();
+                } else if (recentsScreen.classList.contains('visible')) {
+                    closeRecentsScreen();
+                } else if (notificationPanel.classList.contains('visible')) {
+                    closeNotificationPanel();
+                } else if (controlCenter.classList.contains('visible')) {
+                    closeControlCenter();
+                } else if (currentApp) {
+                    closeCurrentApp();
+                }
+            });
+
+            // Browser search functionality
+            function performSearch() {
+                const query = searchInput.value.trim();
+                if (query) {
+                    window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+                }
+            }
+            searchButton.addEventListener('click', performSearch);
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    performSearch();
+                }
+            });
+
+            // YouTube Search functionality
+            function performYoutubeSearch() {
+                const query = youtubeSearchBar.value.trim();
+                if (query) {
+                    window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, '_blank');
+                }
+            }
+            youtubeSearchButton.addEventListener('click', performYoutubeSearch);
+            youtubeSearchBar.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    performYoutubeSearch();
+                }
+            });
+
+            // YouTube video card click
+            youtubeVideoCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    const videoId = card.dataset.videoId;
+                    if (videoId) {
+                        window.open(`https://www.youtube.com/watch?v=${videoId}`, '_blank');
+                    }
+                });
+            });
+
+
+            // Add app to recent history
+            function addAppToRecents(appId) {
+                // Remove if already in history to move it to the top
+                recentAppsHistory = recentAppsHistory.filter(id => id !== appId);
+                // Add to the beginning
+                recentAppsHistory.unshift(appId);
+                // Trim history to max size
+                if (recentAppsHistory.length > MAX_RECENT_APPS) {
+                    recentAppsHistory = recentAppsHistory.slice(0, MAX_RECENT_APPS);
+                }
+                localStorage.setItem('recentAppsHistory', JSON.stringify(recentAppsHistory)); // Save to local storage
+            }
+
+            // Open Recents Screen
+            recentsBtn.addEventListener('click', openRecentsScreen);
+
+            function openRecentsScreen() {
+                closeAllPanels(); // Close other open elements
+
+                // Clear previous recent cards
+                recentAppsContainer.innerHTML = ''; // Clear only the container for app cards
+
+                if (recentAppsHistory.length === 0) {
+                    noRecentAppsMessage.classList.remove('hidden'); // Show "No recent apps" message
+                    clearRecentsBtn.classList.add('hidden'); // Hide clear button
+                } else {
+                    noRecentAppsMessage.classList.add('hidden'); // Hide "No recent apps" message
+                    clearRecentsBtn.classList.remove('hidden'); // Show clear button
+                    recentAppsHistory.forEach(appId => {
+                        const app = appData.find(a => a.id === appId);
+                        if (app) {
+                            const card = document.createElement('div');
+                            card.className = 'recent-app-card';
+                            card.innerHTML = `
+                                <div class="w-full h-full flex items-center justify-center ${app.color}">
+                                    ${app.icon}
+                                </div>
+                                <span class="app-title">${app.name}</span>
+                            `;
+                            card.addEventListener('click', () => {
+                                closeRecentsScreen();
+                                // Find the actual icon element to animate back to
+                                const targetIcon = document.querySelector(`.app-icon[data-app-id="${app.id}"]`);
+                                openApp(app.id, targetIcon);
+                            });
+                            recentAppsContainer.appendChild(card); // Append to the container
+                        }
+                    });
+                }
+
+                launcherScreen.classList.add('recents-is-open');
+                recentsScreen.classList.add('visible');
+            }
+
+            // Close Recents Screen
+            function closeRecentsScreen() {
+                recentsScreen.classList.remove('visible');
+                launcherScreen.classList.remove('recents-is-open');
+            }
+
+            // Clear All Recents functionality
+            clearRecentsBtn.addEventListener('click', () => {
+                const cards = recentAppsContainer.querySelectorAll('.recent-app-card');
+                if (cards.length > 0) {
+                    cards.forEach(card => card.classList.add('clearing'));
+                    // Wait for animation to complete before clearing
+                    setTimeout(() => {
+                        recentAppsHistory = []; // Clear the array
+                        localStorage.removeItem('recentAppsHistory'); // Clear from local storage
+                        openRecentsScreen(); // Re-render recents screen to show "No recent apps"
+                        showToast('RAM cleared: 2.5GB');
+                    }, 300); // Match CSS transition duration
+                } else {
+                    showToast('No recent apps to clear.');
+                }
+            });
+
+            // Show a temporary toast message
+            function showToast(message) {
+                let toast = document.querySelector('.toast-message');
+                if (!toast) {
+                    toast = document.createElement('div');
+                    toast.className = 'toast-message';
+                    screenContent.appendChild(toast);
+                }
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000); // Hide after 3 seconds
+            }
+
+            // --- Notification and Control Center Swipe Logic ---
+            screenContent.addEventListener('touchstart', (e) => {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            });
+
+            screenContent.addEventListener('touchend', (e) => {
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndY = e.changedTouches[0].clientY;
+
+                const deltaX = touchEndX - touchStartX;
+                const deltaY = touchEndY - touchStartY;
+
+                // Check if swipe started from the top area and is a downward swipe
+                if (touchStartY < TOP_SWIPE_AREA_HEIGHT && deltaY > SWIPE_THRESHOLD && Math.abs(deltaX) < Math.abs(deltaY)) {
+                    // Determine if it's a left-side or right-side swipe
+                    if (touchStartX < screenContent.offsetWidth / 2) {
+                        // Left side swipe for Notification Panel
+                        openNotificationPanel();
+                    } else {
+                        // Right side swipe for Control Center
+                        openControlCenter();
+                    }
+                }
+            });
+
+            // Open Notification Panel
+            function openNotificationPanel() {
+                closeAllPanels(); // Close other open elements
+                launcherScreen.classList.add('panel-is-open'); // Add panel-is-open to dim launcher
+                notificationPanel.classList.add('visible');
+            }
+
+            // Close Notification Panel
+            function closeNotificationPanel() {
+                notificationPanel.classList.remove('visible');
+                launcherScreen.classList.remove('panel-is-open'); // Remove panel-is-open
+            }
+
+            // Open Control Center
+            function openControlCenter() {
+                closeAllPanels(); // Close other open elements
+                launcherScreen.classList.add('panel-is-open'); // Add panel-is-open to dim launcher
+                controlCenter.classList.add('visible');
+            }
+
+            // Close Control Center
+            function closeControlCenter() {
+                controlCenter.classList.remove('visible');
+                launcherScreen.classList.remove('panel-is-open'); // Remove panel-is-open
+            }
+
+            // Brightness Slider functionality
+            brightnessSlider.addEventListener('input', (e) => {
+                // 1 is full brightness (0 overlay opacity), 0.1 is minimum brightness (0.9 overlay opacity)
+                const overlayOpacity = 1 - parseFloat(e.target.value);
+                brightnessOverlay.style.backgroundColor = `rgba(0, 0, 0, ${overlayOpacity})`;
+            });
+            // Set initial brightness overlay based on slider value
+            brightnessOverlay.style.backgroundColor = `rgba(0, 0, 0, ${1 - parseFloat(brightnessSlider.value)})`;
+
+
+            // Volume Slider (visual only)
+            volumeSlider.addEventListener('input', (e) => {
+                console.log(`Volume set to: ${e.target.value}%`);
+                // In a real app, you'd integrate with audio APIs here.
+            });
+
+            // Control Center Toggles (visual only)
+            wifiToggle.addEventListener('click', () => {
+                wifiToggle.classList.toggle('active');
+            });
+            bluetoothToggle.addEventListener('click', () => {
+                bluetoothToggle.classList.toggle('active');
+            });
+            hotspotToggle.addEventListener('click', () => {
+                hotspotToggle.classList.toggle('active');
+            });
+
+            // Close panel if clicked outside (on the dimmed launcher screen)
+            screenContent.addEventListener('click', (e) => {
+                // Ensure click is not inside the panel itself or a status bar element
+                if (notificationPanel.classList.contains('visible') && !notificationPanel.contains(e.target) && !e.target.closest('.status-bar')) {
+                    closeNotificationPanel();
+                }
+                if (controlCenter.classList.contains('visible') && !controlCenter.contains(e.target) && !e.target.closest('.status-bar')) {
+                    closeControlCenter();
+                }
+            });
+
+            // Load recent apps history from local storage on startup
+            const savedRecentApps = localStorage.getItem('recentAppsHistory');
+            if (savedRecentApps) {
+                recentAppsHistory = JSON.parse(savedRecentApps);
+            }
+
+            // --- Phone Dial Pad Logic ---
+            let currentDialNumber = '';
+
+            dialPadButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const value = button.dataset.value;
+                    if (currentDialNumber.length < 15) { // Limit number length
+                        currentDialNumber += value;
+                        dialDisplay.textContent = currentDialNumber;
+                    }
+                });
+            });
+
+            deleteButton.addEventListener('click', () => {
+                currentDialNumber = currentDialNumber.slice(0, -1);
+                dialDisplay.textContent = currentDialNumber;
+            });
+
+            callButton.addEventListener('click', () => {
+                if (currentDialNumber) {
+                    // Using a custom modal/message box instead of alert()
+                    const messageBox = document.createElement('div');
+                    messageBox.style.cssText = `
+                        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                        background: rgba(0,0,0,0.8); color: white; padding: 20px; border-radius: 10px;
+                        z-index: 9999; text-align: center; font-size: 1.2rem;
+                    `;
+                    messageBox.textContent = `Calling: ${currentDialNumber}`;
+                    screenContent.appendChild(messageBox);
+                    setTimeout(() => {
+                        messageBox.remove();
+                    }, 2000); // Remove after 2 seconds
+
+                    currentDialNumber = ''; // Clear after call
+                    dialDisplay.textContent = '';
+                } else {
+                    const messageBox = document.createElement('div');
+                    messageBox.style.cssText = `
+                        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                        background: rgba(255,0,0,0.8); color: white; padding: 20px; border-radius: 10px;
+                        z-index: 9999; text-align: center; font-size: 1.2rem;
+                    `;
+                    messageBox.textContent = 'Please enter a number to call.';
+                    screenContent.appendChild(messageBox);
+                    setTimeout(() => {
+                        messageBox.remove();
+                    }, 2000); // Remove after 2 seconds
+                }
+            });
+
+            // --- Phone App Tab Logic ---
+            phoneTabButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const tabId = button.dataset.tab;
+                    showPhoneTab(tabId);
+                });
+            });
+
+            function showPhoneTab(tabId) {
+                // Hide all tab contents and remove dial-pad-animated classes
+                dialPadTab.classList.remove('active', 'show');
+                contactsTab.classList.remove('active');
+                historyTab.classList.remove('active');
+
+                dialPadTab.style.display = 'none';
+                contactsTab.style.display = 'none';
+                historyTab.style.display = 'none';
+
+                // Remove active class from all tab buttons
+                phoneTabButtons.forEach(button => button.classList.remove('active'));
+
+                // Show the selected tab content and activate its button
+                if (tabId === 'dialPad') {
+                    dialPadTab.classList.add('active');
+                    dialPadTab.style.display = 'flex'; // Ensure flex display for content alignment
+                    document.querySelector('.tab-button[data-tab="dialPad"]').classList.add('active');
+                    // Add animation class for dial pad
+                    setTimeout(() => {
+                        dialPadTab.classList.add('show');
+                    }, 50); // Small delay to allow display:flex to apply
+                } else if (tabId === 'contacts') {
+                    contactsTab.classList.add('active');
+                    contactsTab.style.display = 'flex';
+                    document.querySelector('.tab-button[data-tab="contacts"]').classList.add('active');
+                } else if (tabId === 'history') {
+                    historyTab.classList.add('active');
+                    historyTab.style.display = 'flex';
+                    document.querySelector('.tab-button[data-tab="history"]').classList.add('active');
+                }
+            }
+
+            // --- Bolo App (AI Chatbot) Logic ---
+            sendButton.addEventListener('click', async () => {
+                const userMessage = chatInput.value.trim();
+                if (userMessage) {
+                    addMessage(userMessage, 'user');
+                    chatInput.value = '';
+                    const loadingMessage = addMessage('...', 'ai', true); // Add a loading message
+
+                    try {
+                        let chatHistory = [];
+                        chatHistory.push({ role: "user", parts: [{ text: userMessage }] });
+                        const payload = { contents: chatHistory };
+                        const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                        const response = await fetch(apiUrl, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload)
+                                });
+                        const result = await response.json();
+
+                        // Remove loading message
+                        loadingMessage.remove();
+
+                        if (result.candidates && result.candidates.length > 0 &&
+                            result.candidates[0].content && result.candidates[0].content.parts &&
+                            result.candidates[0].content.parts.length > 0) {
+                            const aiText = result.candidates[0].content.parts[0].text;
+                            addMessage(aiText, 'ai');
+                        } else {
+                            addMessage('দুঃখিত, আমি আপনার অনুরোধ বুঝতে পারিনি।', 'ai'); // "Sorry, I couldn't understand your request."
+                        }
+                    } catch (error) {
+                        console.error('Error fetching AI response:', error);
+                        loadingMessage.remove(); // Remove loading message on error
+                        addMessage('AI এর সাথে সংযোগ স্থাপন করা যায়নি।', 'ai'); // "Could not connect to AI."
+                    }
+                    chatDisplay.scrollTop = chatDisplay.scrollHeight; // Scroll to bottom
+                }
+            });
+
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendButton.click();
+                }
+            });
+
+            function addMessage(text, sender, isLoading = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message-bubble ${sender}-message`;
+                messageDiv.textContent = text;
+                if (isLoading) {
+                    messageDiv.classList.add('loading-indicator');
+                }
+                chatDisplay.appendChild(messageDiv);
+                chatDisplay.scrollTop = chatDisplay.scrollHeight; // Scroll to bottom
+                return messageDiv; // Return the message element to allow removal/modification
+            }
+
+            // --- Settings App Logic ---
+            myPhoneOption.addEventListener('click', () => {
+                openMyPhoneScreen();
+            });
+
+            myPhoneBackBtn.addEventListener('click', () => {
+                closeMyPhoneScreen();
+                // Re-open settings app after closing My Phone screen
+                openApp('settingsApp', document.querySelector('.app-icon[data-app-id="settingsApp"]'));
+            });
+
+            function openMyPhoneScreen() {
+                myPhoneScreen.classList.add('visible');
+            }
+
+            function closeMyPhoneScreen() {
+                myPhoneScreen.classList.remove('visible');
+            }
+        });
+    </script>
+</body>
+</html>
